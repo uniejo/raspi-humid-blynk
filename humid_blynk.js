@@ -18,7 +18,6 @@ var BLYNK_AUTH   = process.argv[2];
 var MAIL_DEST    = process.argv[3];
 
 var SAVE_FILE    = "humid_blynk.json";
-var MAX_TEMP     = 30;
 
 var BLYNK_AUTH_length = BLYNK_AUTH == null ? 0 : BLYNK_AUTH.length;
 if ( BLYNK_AUTH_length != 32 ) {
@@ -32,6 +31,7 @@ if ( BLYNK_AUTH_length != 32 ) {
 //
 var req_humid       = 10;
 var req_temp_days   = 40;
+var max_temp        = 30;
 var temp_days_list  = [];
 
 
@@ -74,6 +74,7 @@ var v_shift_day     = new blynk.VirtualPin(3);        // Remove day button (shif
 
 var v_req_humid     = new blynk.VirtualPin(5);        // Requested humidity
 var v_req_temp_days = new blynk.VirtualPin(6);        // Requested temp days
+var v_max_temp      = new blynk.VirtualPin(7);        // Max temp (from blynk UI)
 
 var v_humid         = new blynk.VirtualPin(10);        // Current humidity
 var v_temp          = new blynk.VirtualPin(11);        // Requested humidity
@@ -96,6 +97,7 @@ function save_data() {
     if ( req_temp_days  ) save_data.req_temp_days  = req_temp_days;
     if ( req_humid      ) save_data.req_humid      = req_humid;
     if ( temp_days_list ) save_data.temp_days_list = temp_days_list;
+    if ( max_temp       ) save_data.max_temp       = max_temp;
 
     fs.writeFileSync(SAVE_FILE, JSON.stringify(save_data) );
 }
@@ -242,6 +244,7 @@ fs.readFile(SAVE_FILE, function(err, buf) {
     if ( save_data.max_temp_days  ) max_temp_days  = save_data.max_temp_days;
     if ( save_data.req_humid      ) req_humid      = save_data.req_humid;
     if ( save_data.temp_days_list ) temp_days_list = save_data.temp_days_list;
+    if ( save_data.max_temp       ) max_temp       = save_data.max_temp;
 
     console.log("Read save total temp: " + buf);
 
@@ -254,6 +257,7 @@ if ( sensor.initialize() ) {
 } else {
     console.warn("Failed to initialize sensor");
 }
+
 
 function set_stage (stage) {
     if ( v_stage == stage ) return;
@@ -274,6 +278,10 @@ function set_stage (stage) {
 
     o_heat.writeSync( v_stage == 'heating' ? 1 : 0 );
     o_fan.writeSync(  v_stage == 'cool'    ? 1 : 0 );
+
+    if ( stage == 'done' ) {
+        setTimeout(function(){ set_stage('ready'); }, 2000);
+    }
 }
 
 function is_idle() {
@@ -287,10 +295,12 @@ function run_stage() {
     if ( i_start_heat_t != null && ( Date.now() - i_start_heat_t ) < 100 ) return;
     if ( readout.humidity <= req_humid ) {
         console.log("Requested humidity " + req_humid + " reached: "+readout.humidity);
+        if ( v_stage != 'cool' ) {
+            setTimeout(function(){ set_stage('done'); }, 5000);
+        }
         set_stage('cool');
-        setTimeout(function(){ set_stage('done'); }, 5000);
     }
-    else if ( readout.temperature < MAX_TEMP ) {
+    else if ( readout.temperature < max_temp ) {
         set_stage('heating');
     }
     else {
@@ -329,6 +339,7 @@ i_start_heat.watch(function(err, value) {
     }
     i_start_heat_t = null;
 });
+
 v_start_heat.on('write', function(param) {
     console.log(param[0]==1 ? "Start" : "Stop", " (", param[0], ")");
     set_stage( param[0]==1 ? "heating" : "ready");
@@ -396,16 +407,21 @@ v_shift_day.on('write', function(param) {
 
 v_req_humid.on('write', function(param) {
     console.log("Requested humidity : ", param[0], " %");
+    if ( param[0] == null ) return;
     req_humid = param[0];
 });
 
 v_req_temp_days.on('write', function(param) {
     console.log("Requested temp_days : ", param[0], " %");
+    if ( param[0] == null ) return;
     req_temp_days = param[0];
 });
 
+v_max_temp.on('write', function(param) {
+    console.log("Requested max temp : ", param[0], " %");
+    if ( param[0] == null ) return;
+    max_temp = param[0];
+});
 
 set_stage("done");
-v_start_heat.write( 0 );
 t_run = setInterval(run_stage, 1000);
-
