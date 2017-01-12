@@ -11,12 +11,14 @@ Documentation
  </ul>
 
 Modules required
-  <a href="https://www.npmjs.com/package/node-fs">node-fs</a>
-    $ npm install node-fs
-  <a href="https://www.npmjs.com/package/blynk-library">blynk-library</a>
-    $ npm install blynk-library
-  <a href="https://github.com/momenso/node-dht-sensor">node-dht-sensor</a>
-    $ npm install node-dht-sensor
-  <a href="https://github.com/fivdi/onoff">onoff</a>
-    $ npm install onoff
+ <ul>
+  <li><a href="https://www.npmjs.com/package/node-fs">node-fs</a><br/>
+    $ npm install node-fs</li>
+  <li><a href="https://www.npmjs.com/package/blynk-library">blynk-library</a><br/>
+    $ npm install blynk-library</li>
+  <li><a href="https://github.com/momenso/node-dht-sensor">node-dht-sensor</a><br/>
+    $ npm install node-dht-sensor</li>
+  <li><a href="https://github.com/fivdi/onoff">onoff</a><br/>
+    $ npm install onoff</li>
+ </ul>
 
