@@ -13,20 +13,36 @@
 // Outputs: four relay outputs (only two used)
 // Control: Blynk app
 //
+// Environment variables:
+// I usually need to set NODE_PATH=/usr/local/lib/node_modules before running this script.
+//
 
-var BLYNK_AUTH   = process.argv[2];
-var MAIL_DEST    = process.argv[3];
+var BLYNK_AUTH    = process.argv[2];
+var MAIL_DEST     = process.argv[3];
+var BLYNK_ADDR    = "blynk-cloud.com"; // or f.ex. "127.0.0.1";
 
-var SAVE_FILE    = "humid_blynk.json";
-var TEMP_UNIT    = '⁰C';
-var HUMID_UNIT   = '%';
-var DGD_UNIT     = 'graddage'; // "degree days"
-var DHT_TYPE     = 11;         // 11=DHT11, 22=DHT22/AM2302
-var DHT_PIN      = 4;          // I2C pin 4 where DHT11/DHT22 is attached
+var LANG          = 'en';
+
+var SAVE_FILE     = "humid_blynk.json";
+var TEMP_UNIT     = '⁰C';
+var HUMID_UNIT    = '%';
+var DGD_UNIT      = { da:'graddage', en: "degree days" }[LANG];
+var READ_INTERVAL = 5000;       // 5 seconds (suggested interval)
+
+var DHT_TYPE      = 11;         // 11=DHT11, 22=DHT22/AM2302
+var DHT_PIN       = 4;          // I2C pin 4 where DHT11/DHT22 is attached
 
 var BLYNK_AUTH_length = BLYNK_AUTH == null ? 0 : BLYNK_AUTH.length;
+
 if ( BLYNK_AUTH_length != 32 ) {
-    console.log("Please supply Blynk auth token as first argument (length "+BLYNK_AUTH_length+"; should be 32): "+BLYNK_AUTH);
+    log(
+        "\n"+
+        "Syntax: "+process.argv[1]+" <blynk-token> <email-address>\n"+
+        "\n"+
+        "<blynk-token>   : Blynk token (expected length 32, got "+BLYNK_AUTH_length+"): "+BLYNK_AUTH+"\n"+
+        "<email-address> : Email address for notifications\n"+
+        "\n"
+    );
     process.exit();
 }
 
@@ -48,10 +64,14 @@ var Blynk     = require("blynk-library");
 var Gpio      = require("onoff").Gpio;
 var sensorLib = require('node-dht-sensor');
 
-var blynk = new Blynk.Blynk(BLYNK_AUTH);
+// Blynk by default connects to blynk-cloud.com:8441 (ssl)
+// port 8443 (ssl),  port 8442 (not encrypted) or port 8441 (local)
+//var blynk = new Blynk.Blynk(BLYNK_AUTH);
+var blynk = new Blynk.Blynk(BLYNK_AUTH, options={addr: BLYNK_ADDR});
 
 var readout;
 var readout_time;
+var stage_changed_time = hrtime_secs();
 
 //
 // INPUTS (physical)
@@ -86,18 +106,36 @@ var v_max_temp      = new blynk.VirtualPin(7);        // Max temp (from blynk UI
 //Outputs:
 var v_humid         = new blynk.VirtualPin(10);        // Current humidity
 var v_temp          = new blynk.VirtualPin(11);        // Current temperature
-var v_dgd_summary   = new blynk.VirtualPin(12);        // Total degree days (summary display)
+var v_dgd_summary   = new blynk.VirtualPin(12);        // Total degree days (summary display)(console)
+//var v_dgd_table     = new blynk.VirtualPin(13);        // Total degree days (table)
 
-var v_stage         = "-";
+var v_stage         = "ready";
 var v_ready         = new blynk.VirtualPin(20);
 var v_heating       = new blynk.VirtualPin(21);
 var v_pause         = new blynk.VirtualPin(22);
 var v_cool          = new blynk.VirtualPin(23);
 var v_done          = new blynk.VirtualPin(24);
+var v_stage_time    = "-";
 
+var v_console       = new blynk.VirtualPin(30);
 
 var t_sensor;
 var t_run;
+
+//v_dgd_table.addRow(1,
+
+
+function log(message) {
+    // Workaround for join
+    var txt = message;
+    for(var i = 0; i<arguments.length; i++) {
+        if ( i > 0 ) {
+            txt += arguments[i];
+        }
+    }
+
+    console.log(txt);
+}
 
 function save_data() {
     var save_data = { };
@@ -149,20 +187,26 @@ function update_degree_days_list(readout) {
        timer.day_avg = timer.temp_days * 86400 * 1000 / (Date.now() - timer.started);
        timer.etc = timer.started + ( timer.req_temp_days / timer.day_avg * 86400 * 1000 )
 
-       //console.log("Timer "+i+" Next warning level: "+timer.warnings[0].temp_days);
+       //log("Timer "+i+" Next warning level: "+timer.warnings[0].temp_days);
 
        while ( timer.warnings.length > 0 && timer.warnings[0].temp_days <= timer.temp_days ) {
            var warning = timer.warnings[0];
            // Send out warning
-           console.log("Warning level "+warning.temp_days+" (temp days) reached");
+           log("Warning level "+warning.temp_days+" (temp days) "+(warning.text==null ? "" : "("+warning.text+") ")+"reached");
            var etc_dt   = (new Date( timer.etc     )).toLocaleString();
            var start_dt = (new Date( timer.started )).toLocaleString();
-//         var notice = "Has passed "+warning.temp_days+" "+DGD_UNIT+" ("+old_temp_days+") out of " + timer.req_temp_days + "\n"+
-//                      "started  "+start_dt+"\n"+
-//                      "ETC:     "+etc_dt+"\n";
-           var notice = "Har passeret "+warning.temp_days+" "+DGD_UNIT+" ("+old_temp_days+") ud af " + timer.req_temp_days + "\n"+
+
+           var notice = {
+             en:        "Has passed "+warning.temp_days+" "+DGD_UNIT+
+                        " ("+old_temp_days+") out of " + timer.req_temp_days + "\n"+
+                        "started  "+start_dt+"\n"+
+                        "ETC:     "+etc_dt+"\n",
+             da:        "Har passeret "+warning.temp_days+" "+DGD_UNIT+
+                        " ("+old_temp_days+") ud af " + timer.req_temp_days + "\n"+
                         "som blev startet "+start_dt+"\n"+
-                        "forventet ETC:   "+etc_dt+"\n";
+                        "forventet ETC:   "+etc_dt+"\n",
+           }[LANG];
+
            notices.push(notice);
            timer.warnings.pop();
            // Click relay to indicate change
@@ -185,26 +229,38 @@ function update_degree_days_list(readout) {
     }
 
     if ( notices.length > 0 ) {
-        console.log("Notices to send: "+ notices.length);
+        log("Notices to send: "+ notices.length);
         send_notification( notices );
     }
 }
 
 function show_degree_days() {
+//
     var summary = get_degree_days();
-    v_dgd_summary.write(summary);
+    v_dgd_summary.write( pad_lines( summary ) );
+}
+
+function pad_lines( text ) {
+    var lines_remain = 8;
+    var lines = text.split("\n");
+    for(var i = 0; i<lines.length; i++) {
+        lines_remain = lines_remain - ( 0 + (lines[i].length / 46) >> 0 );
+    }
+    for(; lines_remain>0; lines_remain--) {
+        text += "\n";
+    }
+    return text;
 }
 
 function send_notification(notices) {
     var summary = notices.join("\n") +"\n\n" + get_degree_days();
-    console.log("Sending report to "+MAIL_DEST);
+    log("Sending report to "+MAIL_DEST);
     blynk.email( MAIL_DEST, 'Heater report', summary);
 }
 
 function get_degree_days() {
     if ( temp_days_list.length == 0 ) {
-        v_dgd_summary.write("Ingen aktiv.");   // "None active."
-        return;
+        return { en: "No active timers.\n", da: "Ingen aktive timers.\n" }[LANG];
     }
 
     var summary_notice  = null;
@@ -217,7 +273,9 @@ function get_degree_days() {
        summary_list.push( timer.temp_days.toFixed(2) );
 
        var etc_dt = (new Date( timer.etc )).toLocaleString();
-       console.log("#"+ i +"  total = "+timer.temp_days.toFixed(4) + " of " + timer.req_temp_days.toFixed(4) +  "  ETC: "+etc_dt);
+
+//     log("#"+ i +"  total = "+timer.temp_days.toFixed(4) + " of " + timer.req_temp_days.toFixed(4) +  "  ETC: "+etc_dt);
+
        if ( summary_notice == null ) summary_notice = "ETC: "+etc_dt;
     }
 
@@ -228,18 +286,38 @@ function get_degree_days() {
     return summary;
 }
 
+function top_degree_day() {
+    if ( temp_days_list == null    ) return "";
+    var top;
+    for(var i = 0; i<temp_days_list.length; i++) {
+       var timer = temp_days_list[i];
+       if ( top != null && top.etc != null && timer.etc != null && top.etc>timer.etc ) continue;
+       top = timer;
+    }
+    if ( top == null ) return "";
+    var etc_dt   = (new Date( top.etc     )).toLocaleString();
+    var start_dt = (new Date( top.started )).toLocaleString();
+    var toptext =
+        "   "+top.temp_days.toFixed(4) + " of " + top.req_temp_days.toFixed(0)+
+        "  ETC: "+etc_dt+"   Started: "+start_dt;
+
+    return toptext;
+}
+
 var sensor = {
     initialize: function () {
-        return sensorLib.initialize(DHT_TYPE, DHT_PIN); // 11=DHT11, 22=DHT22/AM2302; pin 4
+        return sensorLib.initialize(DHT_TYPE, DHT_PIN); // Type: 11=DHT11, 22=DHT22/AM2302; Pin: f.ex. pin 4
     },
     read: function () {
-//      console.log("Start readout");
+ //     log("Start readout");
         readout = sensorLib.read();
         if ( (readout.humidity.toFixed(1) == 0.0) && (readout.temperature.toFixed(1) == 0.0) ) return;
 
-        console.log(
+        log(
             "Temperature: " + readout.temperature.toFixed(2) + " " + TEMP_UNIT + ",  " +
-            "Humidity: "    + readout.humidity.toFixed(2)    + " " + HUMID_UNIT );
+            "Humidity: "    + readout.humidity.toFixed(2)    + " " + HUMID_UNIT +
+            top_degree_day()
+        );
 
         v_temp.write(  readout.temperature.toFixed(2) + TEMP_UNIT);
         v_humid.write( readout.humidity.toFixed(2)    + HUMID_UNIT);
@@ -256,7 +334,7 @@ fs.readFile(SAVE_FILE, function(err, buf) {
         if ( err != ENOENT ) console.warn("Reading save file failed: " + err);
         return;
     }
-    console.log("Read save file: " + buf);
+    log("Read save file: " + buf);
 
     var save_data = JSON.parse( buf );
 
@@ -265,14 +343,14 @@ fs.readFile(SAVE_FILE, function(err, buf) {
     if ( save_data.temp_days_list ) temp_days_list = save_data.temp_days_list;
     if ( save_data.max_temp       ) max_temp       = save_data.max_temp;
 
-    console.log("Read save total temp: " + buf);
+    log("Read save total temp: " + buf);
 
     v_pop_day.write(   temp_days_list.length == 0 ? 0 : 1);
     v_shift_day.write( temp_days_list.length == 0 ? 0 : 1);
 });
 
 if ( sensor.initialize() ) {
-    t_sensor = setInterval(sensor.read, 2500);
+    t_sensor = setInterval(sensor.read, READ_INTERVAL);
 } else {
     console.warn("Failed to initialize sensor");
 }
@@ -280,13 +358,14 @@ if ( sensor.initialize() ) {
 
 function set_stage (stage) {
     if ( v_stage == stage ) return;
-    console.log("Change stage from ", v_stage, " to ", stage);
+    log("Change stage from ", v_stage, " to ", stage);
+    stage_changed_time = hrtime_secs();
     v_stage = stage;
 
     // Starting the heat creates a surge that may look like a keypress. So ignore keypresses for a short while.
     if ( stage == 'heating' ) {
         i_start_heat_t = Date.now();
-        i_push_day_t = Date.now();
+        i_push_day_t   = Date.now();
     }
 
     v_ready.write(   v_stage == 'ready'   ? 255 : 0 );
@@ -311,13 +390,16 @@ function run_stage() {
     if ( is_idle() ) return;
     if ( ! readout_time ) return;
     // Right after changing previous stage, could cause a surge in the reading.
-    if ( i_start_heat_t != null && ( Date.now() - i_start_heat_t ) < 100 ) return;
+//   if ( i_start_heat_t != null && ( Date.now() - i_start_heat_t ) < 100 ) return;
+    var stage_dt = hrtime_secs()-stage_changed_time;
     if ( readout.humidity <= req_humid ) {
-        console.log("Requested humidity " + req_humid + " reached: "+readout.humidity);
-        if ( v_stage != 'cool' ) {
-            setTimeout(function(){ set_stage('done'); }, 5000);
+//      log("Requested humidity " + req_humid + " reached: "+readout.humidity+" for "+stage_dt.toFixed(1)+" sec");
+        if ( v_stage == 'pause' && stage_dt > 60 ) {
+            set_stage('done');
         }
-        set_stage('cool');
+        else if ( v_stage == 'heating' ) {
+            set_stage('pause');
+        }
     }
     else if ( readout.temperature < max_temp ) {
         set_stage('heating');
@@ -330,50 +412,75 @@ function run_stage() {
 
 
 blynk.on('connect', function() {
-    console.log("Blynk ready.");
-    set_stage("ready");
+    log("Blynk ready.");
+    blynk.syncAll();
 });
 
 blynk.on('disconnect', function() {
-    console.log("Blynk disconnected.");
+    log("Blynk disconnected.");
 });
 
 blynk.on('error', function() {
-    console.log("Blynk error.");
+    log("Blynk error.");
 });
 
 
 var i_start_heat_t = null;
-i_start_heat.watch(function(err, value) {
-    if ( value == 0 || i_start_heat_t == null ) { i_start_heat_t = Date.now(); return; }
+function start_heat_button(value, origin) {
+
+//  log("start_heat_button "+value);
+
+    if ( value == 1 || i_start_heat_t == null ) {
+        i_start_heat_t = Date.now();
+//      log("Button pressed: "+origin);
+        return;
+    }
+
     var dt = Date.now() - i_start_heat_t;
-    console.log("Button 1 (start/stop) press_time="+dt);
     if ( dt < 15 ) {
-        console.log("Button 1 (start/stop) press_time="+dt+" - Short time = ignored");
-    } else if ( dt < 1000 ) {
-        // set_stage( is_idle() ? "heating" : "ready" );
+        log("Start heat button press_time="+dt+" - short time = ignored" );
+    } else if ( dt < 1500 ) {
+        log("Start heat button press_time="+dt+" - Start heating" );
         set_stage( "heating" );
     } else {
+        log("Start heat button press_time="+dt+" - Stop heating" );
         set_stage( "ready" );
     }
     i_start_heat_t = null;
-});
+}
 
+i_start_heat.watch(function(err, value) {
+    start_heat_button(1-value, "Button 1")
+});
 v_start_heat.on('write', function(param) {
-    console.log(param[0]==1 ? "Start" : "Stop", " (", param[0], ")");
-    set_stage( param[0]==1 ? "heating" : "ready");
+    start_heat_button(param[0], "Start button (blynk app)");
 });
 
 function push_day () {
+    if ( req_temp_days == null ) req_temp_days = 40;
+
     var timer = {
         started:       Date.now(),
+        etc:           Date.now(),
         temp_days:     0.0,
         req_temp_days: req_temp_days,
         warnings: [
-            { temp_days: req_temp_days - 1.0  }, // One dgd before
-            { temp_days: req_temp_days - 0.5  }, // Half a dgd before
-            { temp_days: req_temp_days + 0.0  }, // On time
-            { temp_days: req_temp_days + 0.5  }  // Half a dgd after finish
+            {
+                temp_days: req_temp_days - 1.0,
+                text:      {en: "One dgd remaining",    da: "En graddag tilbage"               }[LANG],
+            },
+            {
+                temp_days: req_temp_days - 0.5,
+                text:      {en: "Half a dgd remaining", da: "En halv graddag tilbage"          }[LANG],
+            },
+            {
+                temp_days: req_temp_days + 0.0,
+                text:      {en: "Done",                 da: "Faerdig"                           }[LANG],
+            },
+            {
+                temp_days: req_temp_days + 0.5,
+                text:      {en: "Done half dgd ago",    da: "Faerdig for en halv graddag siden" }[LANG],
+            }
         ],
     };
 
@@ -382,7 +489,7 @@ function push_day () {
         timer.warnings.pop();
     }
 
-    console.log("Push new day timer ("+req_temp_days+" "+DGD_UNIT+")");
+    log("Push new day timer ("+req_temp_days+" "+DGD_UNIT+")");
     temp_days_list.push( timer );
     show_degree_days();
     v_pop_day.write(   temp_days_list.length == 0 ? 0 : 1);
@@ -395,7 +502,7 @@ function push_day () {
 
 function pop_day () {
     temp_days_list.pop();
-    console.log("Pop day timer ("+req_temp_days+" "+DGD_UNIT+")");
+    log("Pop day timer ("+req_temp_days+" "+DGD_UNIT+")");
     show_degree_days();
     v_pop_day.write(   temp_days_list.length == 0 ? 0 : 1);
     v_shift_day.write( temp_days_list.length == 0 ? 0 : 1);
@@ -407,7 +514,7 @@ function pop_day () {
 
 function shift_day () {
     temp_days_list.shift();
-    console.log("Shift day timer ("+req_temp_days+" "+DGD_UNIT+")");
+    log("Shift day timer ("+req_temp_days+" "+DGD_UNIT+")");
     show_degree_days();
     v_pop_day.write(   temp_days_list.length == 0 ? 0 : 1);
     v_shift_day.write( temp_days_list.length == 0 ? 0 : 1);
@@ -421,9 +528,9 @@ var i_push_day_t = null;
 i_push_day.watch(function(err, value) {
     if ( value == 0 || i_push_day_t == null ) { i_push_day_t = Date.now(); return; }
     var dt = Date.now() - i_push_day_t;
-    console.log("Button 2 (start counter) press_time="+dt);
+    log("Button 2 (start counter) press_time="+dt);
     if ( dt < 15 ) {
-        console.log("Button 2 press_time="+dt+" - Short time = ignored");
+        log("Button 2 press_time="+dt+" - Short time = ignored");
     } else if ( dt < 1000 ) {
         push_day();
     } else {
@@ -432,7 +539,7 @@ i_push_day.watch(function(err, value) {
     i_push_day_t = null;
 });
 v_push_day.on('write', function(param) {
-//  console.log(param[0]==1 ? "Start" : "Stop", " (", param[0], ")");
+//  log(param[0]==1 ? "Start" : "Stop", " (", param[0], ")");
     if ( param[0]==1 ) push_day();
 });
 v_pop_day.on('write', function(param) {
@@ -444,19 +551,19 @@ v_shift_day.on('write', function(param) {
 
 
 v_req_humid.on('write', function(param) {
-    console.log("Requested humidity : ", param[0], " ", HUMID_UNIT);
+    log("Requested humidity : ", param[0], " ", HUMID_UNIT);
     if ( param[0] == null ) return;
     req_humid = param[0];
 });
 
 v_req_temp_days.on('write', function(param) {
-    console.log("Requested temp_days : ", param[0], " ", "temp/days");
+    log("Requested temp_days : ", param[0], " ", "temp/days");
     if ( param[0] == null ) return;
     req_temp_days = param[0];
 });
 
 v_max_temp.on('write', function(param) {
-    console.log("Requested max temp : ", param[0], " ", TEMP_UNIT);
+    log("Requested max temp : ", param[0], " ", TEMP_UNIT);
     if ( param[0] == null ) return;
     max_temp = param[0];
 });
