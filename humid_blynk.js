@@ -137,7 +137,7 @@ function log(message) {
     console.log(txt);
 }
 
-function save_data() {
+function save_data_to_disk() {
     var save_data = { };
 
     if ( req_temp_days  ) save_data.req_temp_days  = req_temp_days;
@@ -145,6 +145,7 @@ function save_data() {
     if ( temp_days_list ) save_data.temp_days_list = temp_days_list;
     if ( max_temp       ) save_data.max_temp       = max_temp;
 
+    log("Save data: "+JSON.stringify(save_data) );
     fs.writeFileSync(SAVE_FILE, JSON.stringify(save_data) );
 }
 
@@ -158,7 +159,7 @@ function cleanup() {
     o_relay_3.unexport();
     o_relay_4.unexport();
     blynk.disconnect();
-    save_data();
+    save_data_to_disk();
 }
 process.on('SIGINT', cleanup);
 process.on('SIGABRT', cleanup);
@@ -197,11 +198,11 @@ function update_degree_days_list(readout) {
            var start_dt = (new Date( timer.started )).toLocaleString();
 
            var notice = {
-             en:        "Has passed "+warning.temp_days+" "+DGD_UNIT+
+             en:        "Has passed "+warning.temp_days+" "+DGD_UNIT+ "\n"+
                         " ("+old_temp_days+") out of " + timer.req_temp_days + "\n"+
                         "started  "+start_dt+"\n"+
                         "ETC:     "+etc_dt+"\n",
-             da:        "Har passeret "+warning.temp_days+" "+DGD_UNIT+
+             da:        "Har passeret "+warning.temp_days+" "+DGD_UNIT+ "\n"+
                         " ("+old_temp_days+") ud af " + timer.req_temp_days + "\n"+
                         "som blev startet "+start_dt+"\n"+
                         "forventet ETC:   "+etc_dt+"\n",
@@ -253,7 +254,7 @@ function pad_lines( text ) {
 }
 
 function send_notification(notices) {
-    var summary = notices.join("\n") +"\n\n" + get_degree_days();
+    var summary = notices.join("\n\n\n") +"\n\n" + get_degree_days();
     log("Sending report to "+MAIL_DEST);
     blynk.email( MAIL_DEST, 'Heater report', summary);
 }
@@ -288,6 +289,7 @@ function get_degree_days() {
 
 function top_degree_day() {
     if ( temp_days_list == null    ) return "";
+    if ( temp_days_list.length < 1 ) return "";
     var top;
     for(var i = 0; i<temp_days_list.length; i++) {
        var timer = temp_days_list[i];
@@ -297,9 +299,13 @@ function top_degree_day() {
     if ( top == null ) return "";
     var etc_dt   = (new Date( top.etc     )).toLocaleString();
     var start_dt = (new Date( top.started )).toLocaleString();
-    var toptext =
-        "   "+top.temp_days.toFixed(4) + " of " + top.req_temp_days.toFixed(0)+
-        "  ETC: "+etc_dt+"   Started: "+start_dt;
+    log("top dgd: "+JSON.stringify(top) );
+    var toptext = "";
+    if ( top.temp_days     != null ) toptext += "   " + top.temp_days.toFixed(4);
+    if ( top.req_temp_days == null ) top.req_temp_days=40;
+    if ( top.req_temp_days != null ) toptext += " of " + top.req_temp_days;
+    if ( etc_dt            != null ) toptext += "  ETC: "+etc_dt;
+    if ( start_dt          != null ) toptext += "   Started: "+start_dt;
 
     return toptext;
 }
@@ -334,7 +340,7 @@ fs.readFile(SAVE_FILE, function(err, buf) {
         if ( err != ENOENT ) console.warn("Reading save file failed: " + err);
         return;
     }
-    log("Read save file: " + buf);
+    log("Read save file:       " + buf);
 
     var save_data = JSON.parse( buf );
 
@@ -347,6 +353,10 @@ fs.readFile(SAVE_FILE, function(err, buf) {
 
     v_pop_day.write(   temp_days_list.length == 0 ? 0 : 1);
     v_shift_day.write( temp_days_list.length == 0 ? 0 : 1);
+
+    // Start saving file once in a while
+    //v_save_interval = setInterval( save_data, 100*60*15 );
+    setInterval( save_data_to_disk, 100*60*15 );
 });
 
 if ( sensor.initialize() ) {
@@ -498,6 +508,8 @@ function push_day () {
     // Click feedback
     o_relay_3.writeSync( 1 );
     setTimeout(function(){ o_relay_3.writeSync( 0 ); },  500);
+
+    save_data_to_disk();
 }
 
 function pop_day () {
@@ -510,6 +522,8 @@ function pop_day () {
     // Click feedback
     o_relay_3.writeSync( 1 );
     setTimeout(function(){ o_relay_3.writeSync( 0 ); },  500);
+
+    save_data_to_disk();
 }
 
 function shift_day () {
@@ -522,6 +536,8 @@ function shift_day () {
     // Click feedback
     o_relay_3.writeSync( 1 );
     setTimeout(function(){ o_relay_3.writeSync( 0 ); },  500);
+
+    save_data_to_disk();
 }
 
 var i_push_day_t = null;
