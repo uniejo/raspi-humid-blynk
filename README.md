@@ -1,11 +1,14 @@
 # raspi-humid-blynk
 
+<p>
 Humidity/temperature control on Raspberry Pi.
+</p>
 
-Hardware: Raspberry Pi 3 B + relay board + proto board with two buttons and temperature/humidity sensor.
-Software: Javascript (node.js) that communicates with hardware and remote app.
-App (iOS or Android): Blynk - IoT for Arduino, RPi, Particle, ESP8266
-
+<p>
+Hardware: Raspberry Pi 3 B + relay board + proto board with two buttons and temperature/humidity sensor.<br/>
+Software: Javascript (node.js) that communicates with hardware and remote app.<br/>
+App (iOS or Android): Blynk - IoT for Arduino, RPi, Particle, ESP8266<br/>
+</p>
 
 Documentation
  <ul>
