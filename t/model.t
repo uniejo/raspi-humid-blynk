@@ -166,6 +166,55 @@ subtest 'load the old humid_blynk.js save file' => sub {
   is $m->timers->[0]{id},  1,           'id assigned';
 };
 
+subtest 'drying ETA' => sub {
+  my $m = model(req_humid => 10, max_temp => 80);
+
+  # Idle readings are not part of the trend
+  $m->add_reading(20, 60, $T0 - 600);
+  $m->start($T0 - 300);
+
+  # Humidity drops 0.5 %/min: 50 % at T0 ... 45 % after 10 minutes
+  for my $min (0 .. 10) {
+    $m->add_reading(40, 50 - $min / 2, $T0 + $min * 60);
+    $m->tick($T0 + $min * 60);
+    is $m->drying_eta($T0 + $min * 60), undef, "no ETA yet after $min min" if $min < 5;
+  }
+  my $now = $T0 + 600;
+  is $m->stage, 'heating', 'heating';
+  # 35 % left at 0.5 %/min = 70 minutes
+  ok abs($m->drying_eta($now) - ($now + 70 * 60)) < 1, 'ETA from the trend';
+  is $m->snapshot($now)->{eta}, $m->drying_eta($now), 'in snapshot';
+
+  $m->add_reading(40, 9, $now + 60);
+  is $m->drying_eta($now + 60), $now + 60, 'target reached: now';
+
+  $m->stop($now + 61);
+  is $m->drying_eta($now + 61), undef, 'no ETA when idle';
+  is_deeply $m->drying, [], 'trend reset';
+
+  my $rising = model(req_humid => 10);
+  $rising->start($T0);
+  $rising->add_reading(20, 40 + $_, $T0 + $_ * 60) for 0 .. 10;
+  is $rising->drying_eta($T0 + 600), undef, 'no ETA when humidity is not dropping';
+
+  my $stale = model(req_humid => 10, sensor_timeout => 60);
+  $stale->start($T0);
+  $stale->add_reading(20, 50 - $_, $T0 + $_ * 60) for 0 .. 10;
+  ok $stale->drying_eta($T0 + 600), 'ETA while fresh';
+  is $stale->drying_eta($T0 + 700), undef, 'no ETA on stale readings';
+
+  my $slow = model(req_humid => 10);
+  $slow->start($T0);
+  $slow->add_reading(20, 90 - $_ * 0.001, $T0 + $_ * 60) for 0 .. 10;
+  is $slow->drying_eta($T0 + 600), undef, 'no ETA beyond a week';
+
+  my $window = model(req_humid => 10, eta_window => 600);
+  $window->start($T0);
+  $window->add_reading(20, 80, $T0 + $_ * 60) for 0 .. 20;    # flat for 20 minutes ...
+  $window->add_reading(20, 80 - $_, $T0 + 1200 + $_ * 60) for 1 .. 10;    # ... then 1 %/min
+  ok abs($window->drying_eta($T0 + 1800) - ($T0 + 1800 + 60 * 60)) < 1, 'only the window is used';
+};
+
 subtest 'history keeps one point per step' => sub {
   my $m = model(history_step => 60, history_size => 3);
   $m->add_reading(20, 50, $T0 + $_ * 20) for 0 .. 11;

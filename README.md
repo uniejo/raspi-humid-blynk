@@ -4,6 +4,7 @@ Humidity/temperature control on a Raspberry Pi. It heats an object to dry it:
 
 - The **heater relay** is on until the target humidity is reached, without going over a max temperature.
 - When the humidity has stayed at the target for a minute, the stage is **done**.
+- While drying, an **ETA** for the target humidity is estimated from the humidity trend of the last 30 minutes.
 - **Degree-day timers** track several items in storage (sum of °C × days). Each timer sends warnings at 1 and ½ degree-day before its target, at the target, and ½ after.
 
 The app is controlled from a phone-friendly web page and two physical buttons. Notices are sent by [ntfy](https://ntfy.sh) and/or email.

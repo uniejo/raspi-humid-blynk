@@ -24,6 +24,7 @@
       <span class="label">Humidity</span>
       <span class="value" id="humid">–</span>
       <span class="sub">target <span id="req-humid-sub">–</span> %</span>
+      <span class="sub" id="eta" hidden></span>
     </div>
   </section>
   <p id="stale" class="warn" hidden>Sensor reading is stale – heater is held off.</p>

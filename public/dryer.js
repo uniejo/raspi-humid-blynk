@@ -35,6 +35,9 @@ function render(s) {
   $('stale').hidden = !(r && r.stale) || s.stage === 'ready';
   $('max-temp-sub').textContent = s.settings.max_temp;
   $('req-humid-sub').textContent = s.settings.req_humid;
+  $('eta').hidden = !s.eta;
+  if (s.eta) $('eta').textContent = s.eta - s.now < 60 ? 'ETA: any moment'
+    : `ETA ≈ ${fmtDuration(s.eta - s.now)} (${new Date(s.eta * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})})`;
 
   for (const li of $('stages').children) li.classList.toggle('active', li.dataset.stage === s.stage);
   $('start').disabled = s.stage === 'heating';

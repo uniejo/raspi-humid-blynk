@@ -33,6 +33,7 @@ has stage_since => sub { _now() };
 has 'reading';    # { temperature, humidity, time }
 has history => sub { [] };    # [ [time, temperature, humidity], ... ]
 has notices => sub { [] };    # [ { time, title, body }, ... ] newest first
+has drying  => sub { [] };    # [ [time, humidity], ... ] while drying, for the ETA
 
 # Tunables
 has 'save_file';
@@ -42,6 +43,9 @@ has sensor_timeout => 60;          # heater is paused when readings are older
 has history_step   => 60;          # one history point per minute
 has history_size   => 24 * 60;     # 24 hours
 has notices_size   => 20;
+has eta_window     => 30 * 60;     # humidity trend is fitted over this many seconds
+has eta_min_span   => 5 * 60;      # no ETA until readings cover this long
+has eta_max        => 7 * 86400;   # slower than this is "not drying"
 
 has integrated_at => undef;
 has next_id       => 1;
@@ -127,6 +131,7 @@ sub set_stage ($self, $stage, $now = _now()) {
   my $old = $self->stage;
   return $self if $old eq $stage;
   $self->stage($stage)->stage_since($now);
+  $self->drying([]) if $self->is_idle;
   return $self->emit(stage => $stage, $old)->emit('changed');
 }
 
@@ -178,6 +183,12 @@ sub tick ($self, $now = _now()) {
 sub add_reading ($self, $temperature, $humidity, $now = _now()) {
   $self->reading({temperature => $temperature, humidity => $humidity, time => $now});
   $self->_integrate($temperature, $now);
+
+  unless ($self->is_idle) {
+    my $drying = $self->drying;
+    push @$drying, [$now, $humidity];
+    shift @$drying while $drying->[0][0] < $now - $self->eta_window;
+  }
 
   my $history = $self->history;
   my $step    = $self->history_step;
@@ -261,10 +272,39 @@ sub summary ($self) {
     scalar @timers, join(', ', map { sprintf '%.2f', $_->{temp_days} } @timers), _time($first->{etc}));
 }
 
+# When the target humidity is expected, from a least-squares line through the
+# readings of the last eta_window seconds (pauses included, they are part of drying).
+# Returns an epoch time, or undef when idle, too little data, or not drying.
+sub drying_eta ($self, $now = _now()) {
+  return undef if $self->is_idle || !$self->sensor_fresh($now);
+  my @points = grep { $_->[0] >= $now - $self->eta_window } @{$self->drying};
+  return undef if @points < 3 || $points[-1][0] - $points[0][0] < $self->eta_min_span;
+
+  my $remaining = $self->reading->{humidity} - $self->req_humid;
+  return $now if $remaining <= 0;
+
+  my $n  = @points;
+  my $mt = 0;
+  my $mh = 0;
+  $mt += $_->[0] / $n for @points;
+  $mh += $_->[1] / $n for @points;
+  my ($cov, $var) = (0, 0);
+  for (@points) {
+    $cov += ($_->[0] - $mt) * ($_->[1] - $mh);
+    $var += ($_->[0] - $mt)**2;
+  }
+  my $slope = $cov / $var;    # % per second
+  return undef if $slope >= 0;
+
+  my $seconds = $remaining / -$slope;
+  return $seconds <= $self->eta_max ? $now + $seconds : undef;
+}
+
 sub snapshot ($self, $now = _now()) {
   my $reading = $self->reading;
   return {
     now         => $now,
+    eta         => $self->drying_eta($now),
     stage       => $self->stage,
     stage_since => $self->stage_since,
     reading     => $reading ? {%$reading, stale => $self->sensor_fresh($now) ? 0 : 1} : undef,

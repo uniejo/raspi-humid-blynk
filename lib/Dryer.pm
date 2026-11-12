@@ -19,6 +19,7 @@ my %DEFAULTS = (
   sensor_interval => 5,
   pause_to_done   => 60,
   sensor_timeout  => 60,
+  eta_window      => 1800,
   settings        => {req_humid => 10, req_temp_days => 40, max_temp => 30},    # used until saved
   buttons         => {min_press => 0.015, heat_long_press => 1.5, day_long_press => 1.0, ignore_after_switch => 0.5},
   pi              => {
@@ -47,6 +48,7 @@ sub startup ($self) {
     save_file      => _abs($self->home, $config->{save_file}),
     pause_to_done  => $config->{pause_to_done},
     sensor_timeout => $config->{sensor_timeout},
+    eta_window     => $config->{eta_window},
   )->load;
 
   my $class = "Dryer::Hardware::$config->{hardware}";

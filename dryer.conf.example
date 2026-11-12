@@ -10,6 +10,7 @@
 
   sensor_interval => 5,     # seconds between readings
   sensor_timeout  => 60,    # heater is paused when the newest reading is older
+  eta_window      => 1800,  # drying ETA follows the humidity trend of this many seconds
   pause_to_done   => 60,    # humidity must stay at target this long before "done"
 
   # Initial values, used until changed in the UI (then kept in save_file)
