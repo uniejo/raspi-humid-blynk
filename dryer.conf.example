@@ -1,0 +1,35 @@
+# Copy to dryer.conf (next to script/ and lib/) or point DRYER_CONFIG at it.
+# Every key is optional; missing keys use the defaults in lib/Dryer.pm.
+{
+  hardware  => 'Pi',                  # 'Mock' simulates the dryer (development)
+  save_file => 'dryer-state.json',    # settings and timers; relative to the app directory
+
+  # HTTP basic auth for the web UI (any user name). Strongly recommended:
+  # the UI switches a heater.
+  password => 'change-me',
+
+  sensor_interval => 5,     # seconds between readings
+  sensor_timeout  => 60,    # heater is paused when the newest reading is older
+  pause_to_done   => 60,    # humidity must stay at target this long before "done"
+
+  # Initial values, used until changed in the UI (then kept in save_file)
+  settings => {req_humid => 10, req_temp_days => 40, max_temp => 30},
+
+  buttons => {heat_long_press => 1.5, day_long_press => 1.0},
+
+  pi => {
+    gpiochip       => 'gpiochip0',    # header GPIOs; very early Pi 5 kernels used 'gpiochip4'
+    output_command => 'pinctrl',      # or 'raspi-gpio' on older Raspberry Pi OS
+    bias           => undef,          # e.g. 'pull-up' if the buttons have no resistors
+    iio_device     => undef,          # auto-detected, e.g. '/sys/bus/iio/devices/iio:device0'
+    inputs  => {heat_button => {pin => 23, active_low => 1}, day_button => {pin => 17, active_low => 1}},
+    # Add active_low => 1 to an output if your relay board switches on a low level
+    outputs => {heater => {pin => 18}, fan => {pin => 24}, clicker => {pin => 27}, spare => {pin => 22}},
+  },
+
+  notify => {
+    ntfy  => undef,    # e.g. 'https://ntfy.sh/my-secret-dryer-topic'
+    email => undef,    # e.g. 'me@example.com' (needs a working sendmail)
+    from  => 'dryer',
+  },
+}

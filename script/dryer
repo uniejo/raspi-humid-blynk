@@ -1,0 +1,9 @@
+#!/usr/bin/env perl
+use Mojo::Base -strict;
+
+use Mojo::File qw(curfile);
+use lib curfile->dirname->sibling('lib')->to_string;
+use Mojolicious::Commands;
+
+# Run as a single process ("daemon"), never prefork/hypnotoad: it owns the GPIO pins
+Mojolicious::Commands->start_app('Dryer');

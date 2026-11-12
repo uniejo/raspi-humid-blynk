@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1f2328">
+  <title>Dryer</title>
+  %= stylesheet 'dryer.css'
+</head>
+<body>
+<main>
+  <header>
+    <h1>Dryer</h1>
+    <span id="conn" class="conn" title="Connection">connecting…</span>
+  </header>
+
+  <section class="readings">
+    <div class="reading">
+      <span class="label">Temperature</span>
+      <span class="value" id="temp">–</span>
+      <span class="sub">max <span id="max-temp-sub">–</span> °C</span>
+    </div>
+    <div class="reading">
+      <span class="label">Humidity</span>
+      <span class="value" id="humid">–</span>
+      <span class="sub">target <span id="req-humid-sub">–</span> %</span>
+    </div>
+  </section>
+  <p id="stale" class="warn" hidden>Sensor reading is stale – heater is held off.</p>
+
+  <section class="card">
+    <ol class="stages" id="stages">
+      <li data-stage="ready">Ready</li>
+      <li data-stage="heating">Heating</li>
+      <li data-stage="pause">Paused</li>
+      <li data-stage="done">Done</li>
+    </ol>
+    <p class="muted">In this stage for <span id="stage-time">–</span></p>
+    <div class="buttons">
+      <button id="start" class="primary">Start drying</button>
+      <button id="stop">Stop</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Settings</h2>
+    <label>Target humidity <output id="req_humid-out"></output> %
+      <input type="range" id="req_humid" min="0" max="100" step="1">
+    </label>
+    <label>Max temperature <output id="max_temp-out"></output> °C
+      <input type="range" id="max_temp" min="20" max="80" step="1">
+    </label>
+    <label>Degree-days per timer <output id="req_temp_days-out"></output>
+      <input type="range" id="req_temp_days" min="1" max="200" step="1">
+    </label>
+  </section>
+
+  <section class="card">
+    <h2>Degree-day timers</h2>
+    <ul id="timers" class="timers"></ul>
+    <div class="buttons">
+      <button id="add-timer" class="primary">Add timer</button>
+      <button id="remove-newest">Remove newest</button>
+      <button id="remove-oldest">Remove oldest</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Last 24 hours</h2>
+    <svg id="chart" viewBox="0 0 600 220" preserveAspectRatio="none" role="img" aria-label="Temperature and humidity history"></svg>
+    <p class="legend"><span class="key temp"></span> Temperature (°C) <span class="key humid"></span> Humidity (%)</p>
+  </section>
+
+  <section class="card">
+    <h2>Notices</h2>
+    <ul id="notices" class="notices"></ul>
+  </section>
+</main>
+%= javascript 'dryer.js'
+</body>
+</html>

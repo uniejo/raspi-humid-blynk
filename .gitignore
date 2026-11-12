@@ -1,0 +1,7 @@
+/dryer.conf
+/dryer-state.json
+/dryer-state.json.tmp
+/humid_blynk.json
+/local/
+/log/
+/node_modules/
