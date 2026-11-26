@@ -1,4 +1,4 @@
-# raspi-humid-blynk – Raspberry Pi dryer
+# raspi-humidity-dryer – Raspberry Pi dryer
 
 Humidity/temperature control on a Raspberry Pi. It heats an object to dry it:
 
