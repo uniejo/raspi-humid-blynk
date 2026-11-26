@@ -1,0 +1,31 @@
+# systemd unit for the dryer daemon. Install with:
+#   sudo cp etc/dryer.service /etc/systemd/system/ && sudo systemctl daemon-reload
+#   sudo systemctl enable --now dryer
+# Adjust User and the paths if the app is not in /opt/dryer.
+
+[Unit]
+Description=Dryer humidity/temperature control
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=dryer
+Group=dryer
+SupplementaryGroups=gpio
+WorkingDirectory=/opt/dryer
+Environment=MOJO_MODE=production
+# Single process on purpose: it owns the GPIO pins (never use prefork/hypnotoad)
+ExecStart=/usr/bin/perl /opt/dryer/script/dryer daemon -l http://*:3000
+# Relays keep their state when the process dies, so always switch the heater off
+ExecStopPost=-/usr/bin/pinctrl set 18 op dl
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/opt/dryer
+
+[Install]
+WantedBy=multi-user.target
